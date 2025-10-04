@@ -70,16 +70,13 @@ class SerialMonitor(QMainWindow):
         self.connect_btn = QPushButton("连接")
         self.connect_btn.clicked.connect(self.toggle_connection)
         serial_layout.addWidget(self.connect_btn, 1, 2)
-        
-        basic_layout.addWidget(serial_group)
-        
+
         # 数据发送组
-        send_group = QGroupBox("数据发送")
-        send_layout = QHBoxLayout(send_group)
         self.send_btn = QPushButton("发送数据")
         self.send_btn.clicked.connect(self.send_message)
-        send_layout.addWidget(self.send_btn)
-        basic_layout.addWidget(send_group)
+        serial_layout.addWidget(self.send_btn, 2, 0, 1, 3)
+        
+        basic_layout.addWidget(serial_group)
 
         # 数据保存组
         save_group = QGroupBox("配置管理")
@@ -286,8 +283,9 @@ class SerialMonitor(QMainWindow):
             self.setup_rx_data()
             # 发送数据
             if self.trans:
-                if self.trans.send_data() != None:
-                    self.log_message(f"数据已发送: {self.trans.send_data()}")
+                data = self.trans.send_data()
+                if data != None:
+                    self.log_message(f"数据已发送: {data}")
             else:
                 self.log_message("发送失败: 未连接串口")
 

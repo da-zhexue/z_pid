@@ -68,8 +68,13 @@ class SerialMonitor(QMainWindow):
         self.connect_btn.clicked.connect(self.toggle_connection)
         serial_layout.addWidget(self.connect_btn, 1, 2)
         
+        # 数据发送组
+        self.send_btn = QPushButton("发送数据")
+        self.send_btn.clicked.connect(self.send_message)
+        serial_layout.addWidget(self.send_btn, 2, 0, 1, 3)
+
         control_layout.addWidget(serial_group)
-        
+
         # PID模式选择组
         pid_mode_group = QGroupBox("PID模式选择")
         pid_mode_layout = QVBoxLayout(pid_mode_group)
@@ -146,7 +151,7 @@ class SerialMonitor(QMainWindow):
         
         # 状态显示
         self.status_text = QTextEdit()
-        self.status_text.setMaximumHeight(100)
+        self.status_text.setMaximumHeight(250)
         self.status_text.setReadOnly(True)
         control_layout.addWidget(serial_group)
         control_layout.addWidget(pid_mode_group)
@@ -250,18 +255,18 @@ class SerialMonitor(QMainWindow):
         try:
             # 创建Trans实例
             self.trans = Trans(port, baudrate)
-            self.trans.pid_position = self.pid_position_cb.isChecked()
-            self.trans.pid_velocity = self.pid_velocity_cb.isChecked()
+            # self.trans.pid_position = self.pid_position_cb.isChecked()
+            # self.trans.pid_velocity = self.pid_velocity_cb.isChecked()
             
-            # 更新PID参数
-            self.update_pid_params()
+            # # 更新PID参数
+            # self.update_pid_params()
 
             # 连接串口
             if self.trans.connect():
                 self.connect_btn.setText("断开")
                 self.log_message(f"已连接到 {port}")
                 # 发送初始数据
-                self.trans.send_data()
+                # self.trans.send_data()
             else:
             # 如果连接失败，将self.trans置为None，避免后续操作出错
                 self.log_message("连接失败: Trans.connect() 返回了 False")
@@ -300,6 +305,27 @@ class SerialMonitor(QMainWindow):
                 
         except ValueError:
             QMessageBox.warning(self, "警告", "请输入有效的数字")
+
+    def send_message(self):
+        """发送数据到设备"""
+        try:
+            if not self.trans:
+                QMessageBox.warning(self, "警告", "未连接串口")
+                return
+            
+            # 更新PID参数
+            self.update_pid_params()
+            # 发送数据
+            if self.trans:
+                data = self.trans.send_data()
+                if data != None:
+                    self.log_message(f"数据已发送: {data}")
+            else:
+                self.log_message("发送失败: 未连接串口")
+
+        except Exception as e:
+            self.log_message(f"发送数据异常: {str(e)}")
+            QMessageBox.critical(self, "错误", f"发送数据错误: {str(e)}")
     
     def save_pid_params(self):
         """保存PID参数到CSV文件[3](@ref)"""
@@ -473,47 +499,57 @@ class Trans:
             print("串口未连接，无法发送数据")
             return False
 
-        data = bytearray(47)
+        data = bytearray(55)
         data[0] = 0xAA  # 帧头
         data[1] = 0x55  # 帧头
-        data[2] = 0x2F  # 字节数
-        data[3] = 0x00  # 保留位
-        data[4] = 0x00  # 保留位
+        data[2] = 0x0A  # 字节数
         
         if self.pid_position:
-            data[5:9] = struct.pack('<f', self.kp_p)
+            data[3] = 0x04 # 类型标识 float 
+            data[4:8] = struct.pack('<f', self.kp_p)
+            data[8] = 0x04 
             data[9:13] = struct.pack('<f', self.ki_p)
-            data[13:17] = struct.pack('<f', self.kd_p)
-            data[17:21] = struct.pack('<f', self.max_i_out_p)
-            data[21:25] = struct.pack('<f', self.max_out_p)
+            data[13] = 0x04
+            data[14:18] = struct.pack('<f', self.kd_p)
+            data[18] = 0x04
+            data[19:23] = struct.pack('<f', self.max_i_out_p)
+            data[23] = 0x04
+            data[24:28] = struct.pack('<f', self.max_out_p)
         else:
-            for i in range(5, 25, 4):
-                data[i:i+4] = struct.pack('<f', 0.0)
+            for i in range(3, 28, 5):
+                data[i] = 0x04
+                data[i+1:i+5] = struct.pack('<f', 0.0)
                 
         if self.pid_velocity:
-            data[25:29] = struct.pack('<f', self.kp_v)  
-            data[29:33] = struct.pack('<f', self.ki_v) 
-            data[33:37] = struct.pack('<f', self.kd_v)  
-            data[37:41] = struct.pack('<f', self.max_i_out_v) 
-            data[41:45] = struct.pack('<f', self.max_out_v) 
+            data[28] = 0x04
+            data[29:33] = struct.pack('<f', self.kp_v)
+            data[33] = 0x04
+            data[34:38] = struct.pack('<f', self.ki_v)
+            data[38] = 0x04
+            data[39:43] = struct.pack('<f', self.kd_v)
+            data[43] = 0x04
+            data[44:48] = struct.pack('<f', self.max_i_out_v)
+            data[48] = 0x04
+            data[49:53] = struct.pack('<f', self.max_out_v)
         else:
-            for i in range(25, 45, 4):
-                data[i:i+4] = struct.pack('<f', 0.0)
+            for i in range(28, 53, 5):
+                data[i] = 0x04
+                data[i+1:i+5] = struct.pack('<f', 0.0)
 
         checksum = 0x00
-        for i in range(45):
+        for i in range(53):
             checksum ^= data[i]
-        data[45] = checksum
-        data[46] = 0x5D  # 帧尾
+        data[53] = checksum
+        data[54] = 0x5D  # 帧尾
         
         try:
             self.ser.write(data)
             self.send_over = True
             print("发送数据成功")
-            return True
+            return data
         except Exception as e:
             print(f"发送数据失败: {e}")
-            return False
+            return None
 
     def _receive_data(self):
         """接收线程函数，持续处理串口数据"""
@@ -531,16 +567,12 @@ class Trans:
                             buffer.clear()
                             break
                             
-                        # 检查是否包含完整帧 (31字节)
-                        if len(buffer) < start_idx + 31:
-                            break
-                            
-                        # 提取帧数据
-                        frame = buffer[start_idx:start_idx+31]
-                        del buffer[:start_idx+31]  # 移除已处理数据
+                        data_length = buffer[start_idx + 2]
+                        frame = buffer[start_idx:start_idx + data_length]
+                        del buffer[:start_idx + data_length]  # 移除已处理数据
 
                         # 验证帧尾 (索引30应为0x5D)
-                        if frame[30] != 0x5D:
+                        if frame[-1] != 0x5D:
                             print("警告: 无效帧尾")
                             continue
                             
@@ -560,27 +592,27 @@ class Trans:
         try:
             # 解析数据
             checksum = 0   
-            for i in range(28):
+            for i in range(30):
                 checksum ^= frame[i]
-            if checksum != frame[29]:
+            if checksum != frame[30]:
                 print("警告: 校验和错误")
                 return
                 
-            self.running = bool(frame[2])
+            self.running = bool(frame[3])
             if self.running:
-                self.motor_v_1 = struct.unpack('>h', frame[3:5])[0]
-                self.motor_v_2 = struct.unpack('>h', frame[5:7])[0]
-                self.motor_v_3 = struct.unpack('>h', frame[7:9])[0]
-                self.motor_v_4 = struct.unpack('>h', frame[9:11])[0]
-                self.current_vx = struct.unpack('>h', frame[11:13])[0]
-                self.current_vy = struct.unpack('>h', frame[13:15])[0]
-                self.current_vz = struct.unpack('>h', frame[15:17])[0]
-                self.current_x = struct.unpack('>h', frame[17:19])[0]
-                self.current_y = struct.unpack('>h', frame[19:21])[0]
-                self.current_z = struct.unpack('>h', frame[21:23])[0]
-                self.current_roll = struct.unpack('>h', frame[23:25])[0]
-                self.current_pitch = struct.unpack('>h', frame[25:27])[0]
-                self.current_yaw = struct.unpack('>h', frame[27:29])[0]
+                self.motor_v_1 = struct.unpack('>h', frame[4:6])[0]
+                self.motor_v_2 = struct.unpack('>h', frame[6:8])[0]
+                self.motor_v_3 = struct.unpack('>h', frame[8:10])[0]
+                self.motor_v_4 = struct.unpack('>h', frame[10:12])[0]
+                self.current_vx = struct.unpack('>h', frame[12:14])[0]
+                self.current_vy = struct.unpack('>h', frame[14:16])[0]
+                self.current_vz = struct.unpack('>h', frame[16:18])[0]
+                self.current_x = struct.unpack('>h', frame[18:20])[0]
+                self.current_y = struct.unpack('>h', frame[20:22])[0]
+                self.current_z = struct.unpack('>h', frame[22:24])[0]
+                self.current_roll = struct.unpack('>h', frame[24:26])[0]
+                self.current_pitch = struct.unpack('>h', frame[26:28])[0]
+                self.current_yaw = struct.unpack('>h', frame[28:30])[0]
 
                 # 更新历史数据
                 current_time = time.time()
