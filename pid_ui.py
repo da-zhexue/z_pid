@@ -145,8 +145,11 @@ class SerialMonitor(QMainWindow):
         
         self.save_btn = QPushButton("保存PID参数到CSV")
         self.save_btn.clicked.connect(self.save_pid_params)
+        self.receive_btn = QPushButton("保存传入数据到CSV")
+        self.receive_btn.clicked.connect(self.receive_message)
         save_layout.addWidget(self.save_btn)
-        
+        save_layout.addWidget(self.receive_btn)
+
         control_layout.addWidget(save_group)
         
         # 状态显示
@@ -295,14 +298,26 @@ class SerialMonitor(QMainWindow):
                 self.trans.kd_p = float(self.kd_p_edit.text())
                 self.trans.max_i_out_p = float(self.max_i_out_p_edit.text())
                 self.trans.max_out_p = float(self.max_out_p_edit.text())
-            
+            else:
+                self.trans.kp_p = 0.0
+                self.trans.ki_p = 0.0
+                self.trans.kd_p = 0.0
+                self.trans.max_i_out_p = 0.0
+                self.trans.max_out_p = 0.0
+
             if self.pid_velocity_cb.isChecked():
                 self.trans.kp_v = float(self.kp_v_edit.text())
                 self.trans.ki_v = float(self.ki_v_edit.text())
                 self.trans.kd_v = float(self.kd_v_edit.text())
                 self.trans.max_i_out_v = float(self.max_i_out_v_edit.text())
                 self.trans.max_out_v = float(self.max_out_v_edit.text())
-                
+            else:
+                self.trans.kp_v = 0.0
+                self.trans.ki_v = 0.0
+                self.trans.kd_v = 0.0
+                self.trans.max_i_out_v = 0.0
+                self.trans.max_out_v = 0.0
+
         except ValueError:
             QMessageBox.warning(self, "警告", "请输入有效的数字")
 
@@ -319,7 +334,7 @@ class SerialMonitor(QMainWindow):
             if self.trans:
                 data = self.trans.send_data()
                 if data != None:
-                    self.log_message(f"数据已发送: {data}")
+                    self.log_message(f"数据已发送: {data.hex()}")
             else:
                 self.log_message("发送失败: 未连接串口")
 
@@ -401,6 +416,37 @@ class SerialMonitor(QMainWindow):
             for i in range(3):
                 self.attitude_curves[i].setData(self.trans.history_time, self.trans.history_att[i])
     
+    def receive_message(self):
+        """保存接收的数据到CSV文件"""
+        try:
+            if self.trans:
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self, "导出配置", "received_data", "CSV文件 (*.csv)")
+                with open(file_path, "w", newline="") as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(["时间"] + ["电机1速度", "电机2速度", "电机3速度", "电机4速度"] + ["线性速度X", "线性速度Y", "线性速度Z"] + ["位置X", "位置Y", "位置Z"] + ["姿态Roll", "姿态Pitch", "姿态Yaw"])
+                    for i in range(len(self.trans.history_time)):
+                        row = [self.trans.history_time[i]]
+                        row.extend([
+                            self.trans.history_motor_v[0][i] if i < len(self.trans.history_motor_v[0]) else "",
+                            self.trans.history_motor_v[1][i] if i < len(self.trans.history_motor_v[1]) else "",
+                            self.trans.history_motor_v[2][i] if i < len(self.trans.history_motor_v[2]) else "",
+                            self.trans.history_motor_v[3][i] if i < len(self.trans.history_motor_v[3]) else "",
+                            self.trans.history_v[0][i] if i < len(self.trans.history_v[0]) else "",
+                            self.trans.history_v[1][i] if i < len(self.trans.history_v[1]) else "",
+                            self.trans.history_v[2][i] if i < len(self.trans.history_v[2]) else "",
+                            self.trans.history_pos[0][i] if i < len(self.trans.history_pos[0]) else "",
+                            self.trans.history_pos[1][i] if i < len(self.trans.history_pos[1]) else "",
+                            self.trans.history_pos[2][i] if i < len(self.trans.history_pos[2]) else "",
+                            self.trans.history_att[0][i] if i < len(self.trans.history_att[0]) else "",
+                            self.trans.history_att[1][i] if i < len(self.trans.history_att[1]) else "",
+                            self.trans.history_att[2][i] if i < len(self.trans.history_att[2]) else "",
+                        ])
+                        writer.writerow(row)
+                self.log_message("接收的数据已保存到 received_data.csv")
+        except Exception as e:
+            self.log_message(f"保存接收数据异常: {str(e)}")
+
     def log_message(self, message):
         """记录状态消息"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -502,39 +548,29 @@ class Trans:
         data = bytearray(55)
         data[0] = 0xAA  # 帧头
         data[1] = 0x55  # 帧头
-        data[2] = 0x0A  # 字节数
+        data[2] = 0x0A  # 数据数
         
-        if self.pid_position:
-            data[3] = 0x04 # 类型标识 float 
-            data[4:8] = struct.pack('<f', self.kp_p)
-            data[8] = 0x04 
-            data[9:13] = struct.pack('<f', self.ki_p)
-            data[13] = 0x04
-            data[14:18] = struct.pack('<f', self.kd_p)
-            data[18] = 0x04
-            data[19:23] = struct.pack('<f', self.max_i_out_p)
-            data[23] = 0x04
-            data[24:28] = struct.pack('<f', self.max_out_p)
-        else:
-            for i in range(3, 28, 5):
-                data[i] = 0x04
-                data[i+1:i+5] = struct.pack('<f', 0.0)
-                
-        if self.pid_velocity:
-            data[28] = 0x04
-            data[29:33] = struct.pack('<f', self.kp_v)
-            data[33] = 0x04
-            data[34:38] = struct.pack('<f', self.ki_v)
-            data[38] = 0x04
-            data[39:43] = struct.pack('<f', self.kd_v)
-            data[43] = 0x04
-            data[44:48] = struct.pack('<f', self.max_i_out_v)
-            data[48] = 0x04
-            data[49:53] = struct.pack('<f', self.max_out_v)
-        else:
-            for i in range(28, 53, 5):
-                data[i] = 0x04
-                data[i+1:i+5] = struct.pack('<f', 0.0)
+        data[3] = 0x04 # 类型标识 float 
+        data[4:8] = struct.pack('<f', self.kp_p)
+        data[8] = 0x04 
+        data[9:13] = struct.pack('<f', self.ki_p)
+        data[13] = 0x04
+        data[14:18] = struct.pack('<f', self.kd_p)
+        data[18] = 0x04
+        data[19:23] = struct.pack('<f', self.max_i_out_p)
+        data[23] = 0x04
+        data[24:28] = struct.pack('<f', self.max_out_p)
+            
+        data[28] = 0x04
+        data[29:33] = struct.pack('<f', self.kp_v)
+        data[33] = 0x04
+        data[34:38] = struct.pack('<f', self.ki_v)
+        data[38] = 0x04
+        data[39:43] = struct.pack('<f', self.kd_v)
+        data[43] = 0x04
+        data[44:48] = struct.pack('<f', self.max_i_out_v)
+        data[48] = 0x04
+        data[49:53] = struct.pack('<f', self.max_out_v)
 
         checksum = 0x00
         for i in range(53):
@@ -560,7 +596,7 @@ class Trans:
                 if data:
                     buffer.extend(data)
                     
-                    while len(buffer) >= 31:
+                    while len(buffer) >= 32:
                         # 查找帧头0xAA 0x55
                         start_idx = buffer.find(b'\xAA\x55')
                         if start_idx == -1:
@@ -569,6 +605,7 @@ class Trans:
                             
                         data_length = buffer[start_idx + 2]
                         frame = buffer[start_idx:start_idx + data_length]
+                        # print(f"接收到数据帧: {frame.hex()}")
                         del buffer[:start_idx + data_length]  # 移除已处理数据
 
                         # 验证帧尾 (索引30应为0x5D)
@@ -584,7 +621,7 @@ class Trans:
 
     def _parse_status_frame(self, frame):
         """
-        解析状态数据帧 (31字节)
+        解析状态数据帧 (32字节)
         """
         if not self.send_over:
             return
@@ -600,19 +637,24 @@ class Trans:
                 
             self.running = bool(frame[3])
             if self.running:
-                self.motor_v_1 = struct.unpack('>h', frame[4:6])[0]
-                self.motor_v_2 = struct.unpack('>h', frame[6:8])[0]
-                self.motor_v_3 = struct.unpack('>h', frame[8:10])[0]
-                self.motor_v_4 = struct.unpack('>h', frame[10:12])[0]
-                self.current_vx = struct.unpack('>h', frame[12:14])[0]
-                self.current_vy = struct.unpack('>h', frame[14:16])[0]
-                self.current_vz = struct.unpack('>h', frame[16:18])[0]
-                self.current_x = struct.unpack('>h', frame[18:20])[0]
-                self.current_y = struct.unpack('>h', frame[20:22])[0]
-                self.current_z = struct.unpack('>h', frame[22:24])[0]
-                self.current_roll = struct.unpack('>h', frame[24:26])[0]
-                self.current_pitch = struct.unpack('>h', frame[26:28])[0]
-                self.current_yaw = struct.unpack('>h', frame[28:30])[0]
+                self.motor_v_1 = struct.unpack('<h', frame[4:6])[0]
+                self.motor_v_2 = struct.unpack('<h', frame[6:8])[0]
+                self.motor_v_3 = struct.unpack('<h', frame[8:10])[0]
+                self.motor_v_4 = struct.unpack('<h', frame[10:12])[0]
+                self.current_vx = struct.unpack('<h', frame[12:14])[0]
+                self.current_vy = struct.unpack('<h', frame[14:16])[0]
+                self.current_vz = struct.unpack('<h', frame[16:18])[0]
+                self.current_x = struct.unpack('<h', frame[18:20])[0]
+                self.current_y = struct.unpack('<h', frame[20:22])[0]
+                self.current_z = struct.unpack('<h', frame[22:24])[0]
+                self.current_roll = struct.unpack('<h', frame[24:26])[0]
+                self.current_pitch = struct.unpack('<h', frame[26:28])[0]
+                self.current_yaw = struct.unpack('<h', frame[28:30])[0]
+
+                print(f"电机速度: {self.motor_v_1}, {self.motor_v_2}, {self.motor_v_3}, {self.motor_v_4}")
+                print(f"线性速度: {self.current_vx}, {self.current_vy}, {self.current_vz}")
+                print(f"位置: {self.current_x}, {self.current_y}, {self.current_z}")
+                print(f"姿态: {self.current_roll}, {self.current_pitch}, {self.current_yaw}")
 
                 # 更新历史数据
                 current_time = time.time()

@@ -1,9 +1,10 @@
 # 串口数据调试工具
   
 pid.py 为调pid、无UI的版本  
-pid_ui.py 为调pid、有UI的版本(串口连接时就开始发送数据了，若要改数据要断开再连接)  
+pid_ui.py 为调pid、有UI的版本(串口连接时就开始发送数据了, 若要改数据要断开再连接)  
 SelfDefine_UI.py 为可设置自定义参数的版本  
 PID参数调试工具.exe 与 自定义参数调试工具.exe 都不需要安装依赖即可运行(以管理员模式运行)  
+stm32_example 为stm32的示例代码(在stm32f103zet6中加载FreeRTOS时出现不明原因无法同时运行多个任务, 所以是无FreeRTOS的版本)
   
 在Linux系统上请在python环境中  
 ```shell
